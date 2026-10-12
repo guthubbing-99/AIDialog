@@ -10,7 +10,7 @@ client = OpenAI(
     api_key=os.environ.get('DEEPSEEK_API_KEY'),
     base_url="https://api.deepseek.com")
 
-collectionMaxLength = 3
+collectionMaxLength = 4
 
 # 循环询问
 
