@@ -10,7 +10,9 @@ client = OpenAI(
     api_key=os.environ.get('DEEPSEEK_API_KEY'),
     base_url="https://api.deepseek.com")
 
-collectionMaxLength = 4
+collectionMaxLength = 10
+promptMaxLength = 6
+system_max = 3
 
 # 循环询问
 
@@ -135,8 +137,7 @@ def addMessage(message: str, history:list = None, long_term_history: str = None)
             return f"未知错误：{str(e)}"
 
 
-last_history = deque(maxlen=collectionMaxLength)
-middle_history = []
+last_history = []
 prompt_history = []
 
 while True:
@@ -145,19 +146,17 @@ while True:
         break
     long_term_history = '\n'.join(prompt_history)
     responseText = addMessage(user_input, last_history, long_term_history)
-    if len(last_history) >= collectionMaxLength:
-        middle_history.append(last_history.popleft())
     last_history.append({"role": "user", "content": user_input})
-
-    if len(last_history) >= collectionMaxLength:
-        middle_history.append(last_history.popleft())
     clearResponseText = clean_markdown(responseText)
     last_history.append({"role": "assistant", "content": clearResponseText})
 
-    if len(middle_history) >= collectionMaxLength:
-        # 中期记忆提取关键字
-        prompt = summarize_history(middle_history)
-        print(prompt)
-        middle_history.clear()
-        prompt_history.append(prompt)
+    if len(last_history) >= collectionMaxLength:
+        prompt_array = last_history[:promptMaxLength]
+        prompt = summarize_history(prompt_array)
+        if prompt:
+            prompt_history.append(prompt)
+
+        if len(prompt_history) > system_max:
+            prompt_history = prompt_history[-system_max:]
+        last_history = last_history[promptMaxLength:]
     
