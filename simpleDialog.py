@@ -5,6 +5,8 @@ import time
 from collections import deque
 import re
 import random
+from agent_with_tool import tools, execute_tool
+import json
 
 client = OpenAI(
     api_key=os.environ.get('DEEPSEEK_API_KEY'),
@@ -87,11 +89,13 @@ def addMessage(message: str, history:list = None, long_term_history: str = None)
                 model="deepseek-flash",
                 messages=messages,
                 stream=True,
+                tools=tools,
+                tool_choice="auto",
                 stream_options={"include_usage": True},
-                reasoning_effort="low",
-                extra_body={"thinking": {"type": "enabled"}}
+                reasoning_effort="low"
             )
             fullText = ""
+            tool_calls_buffer = {}
             cached_tokens = 0
             total_prompt_tokens = 0
             for chunk in stream:
@@ -99,9 +103,51 @@ def addMessage(message: str, history:list = None, long_term_history: str = None)
                     text = chunk.choices[0].delta.content
                     print(text, end='', flush=True)
                     fullText += text
+                elif (chunk.choices and chunk.choices[0].delta.tool_calls):
+                    tool_calls = chunk.choices[0].delta.tool_calls
+                    for tool_calls_item in tool_calls:
+                        index = tool_calls_item.index
+                        if index not in tool_calls_buffer:
+                            tool_calls_buffer[index] = {"name": "", "arguments": "", "id": tool_calls_item.id}
+                        if tool_calls_item.function.name:
+                            tool_calls_buffer[index]["name"] += tool_calls_item.function.name
+                        if tool_calls_item.function.arguments:
+                            tool_calls_buffer[index]["arguments"] += tool_calls_item.function.arguments
+
                 if hasattr(chunk, "usage") and chunk.usage:
                     total_prompt_tokens = getattr(chunk.usage, 'prompt_tokens', 0)
                     cached_tokens = getattr(chunk.usage, 'prompt_cache_hit_tokens', 0)
+            if tool_calls_buffer:
+                assistant_message = { 
+                        "role": "assistant", 
+                        "content": fullText,
+                        "tool_calls": 
+                        [
+                            {
+                                "id": v["id"], 
+                                "type": "function", 
+                                "function": {"name": v["name"], "arguments": v["arguments"]}
+                            }
+                            for v in tool_calls_buffer.values()
+                        ]
+                    }
+                messages.append(assistant_message)
+                for buffer in tool_calls_buffer.values():
+                    args = json.loads(buffer["arguments"])
+                    result = execute_tool(buffer["name"], args)
+                    messages.append({"role": "tool", "tool_call_id": buffer["id"], "content": result})
+                tool_stream = client.chat.completions.create(
+                    model="deepseek-flash",
+                    messages=messages,
+                    stream=True
+                )
+                final_text = ""
+                for final in tool_stream:
+                    if (final.choices and final.choices[0].delta.content):
+                        text = final.choices[0].delta.content
+                        print(text, end='', flush=True)
+                        final_text += text
+                return final_text
             if total_prompt_tokens > 0:
                 hit_rate = (cached_tokens / total_prompt_tokens) * 100
                 print(f"\n[Token 统计] 总 Prompt Tokens: {total_prompt_tokens} | 缓存命中 Tokens: {cached_tokens} | 命中率: {hit_rate:.2f}%")
