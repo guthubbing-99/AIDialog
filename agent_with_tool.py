@@ -31,7 +31,7 @@ def get_weather(location: str) -> str:
     get_weather_url = "https://api.openweathermap.org/data/2.5/weather"
     params = {
         "q": location,
-        "appid": "54e90e94c7a25855183495d1fb768f0f",
+        "appid": "",
         "units": "metric",
         "lang": "zh_cn",
     }
