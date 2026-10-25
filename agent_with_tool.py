@@ -12,7 +12,10 @@ tools = [
         "type": "function",
         "function": {
             "name": "get-weather",
-            "description": "a tool to get weather",
+            "description": """a tool to get weather. if the user's input contains obvious types or
+            phonetic errors(e.g., '杭巷' instead of '杭州'),please automatically corrent the city name 
+            before calling this tools.
+            """,
             "parameters": {
                 "type": "object",
                 "properties": {

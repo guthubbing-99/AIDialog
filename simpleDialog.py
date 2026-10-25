@@ -135,9 +135,22 @@ def addMessage(message: str, history:list = None, long_term_history: str = None)
                     }
                 messages.append(assistant_message)
                 for buffer in tool_calls_buffer.values():
-                    args = json.loads(buffer["arguments"])
-                    result = execute_tool(buffer["name"], args)
-                    messages.append({"role": "tool", "tool_call_id": buffer["id"], "content": result})
+                    try:
+                        args = json.loads(buffer["arguments"])
+                        name = buffer["name"]
+                        if isinstance(name, str) and name.strip():
+                            # 工具名是字符串且非空
+                            result = execute_tool(name, args)
+                            messages.append({"role": "tool", "tool_call_id": buffer["id"], "content": result})
+                        else:
+                            # 希望模型直接跟用户说话
+                            messages.append({"role": "assistant", "content": "[工具参数错误] 缺少必填字段，请检查参数格式后重新调用。"})
+                    except Exception as e:
+                        error_msg = str(e)
+                        if "JSON" in error_msg or isinstance(e, json.JSONDecodeError):
+                            messages.append({"role": "assistant", "content": "Error: JSON 格式解析失败，请严格按照 JSON Schema 重新输出。"})
+                        else:
+                            messages.append({"role": "assistant", "content": f"[工具执行异常] {error_msg}。请调整策略后重新调用。"})
                 tool_stream = client.chat.completions.create(
                     model="deepseek-flash",
                     messages=messages,
@@ -170,24 +183,10 @@ def addMessage(message: str, history:list = None, long_term_history: str = None)
                 print("\n[Token 统计 - 非工具的场景] 未获取到 Token 用量信息")
             return fullText
         except APIStatusError as e:
-            if e.status_code == 400:
-                return "请求体格式错误，请根据错误信息提示修改请求体"
-            if e.status_code == 401:
-                return "API 密钥无效或已过期，请检查环境变量配置。"
-            if e.status_code == 402:
-                return "账号余额不足，请确认账户余额"
-            if e.status_code == 422:
-                return "请求体参数错误，请根据错误信息提示修改相关参数"
-            if e.status_code == 429:
-                # 请求速率达到上限
-                time.sleep(3)
-                continue
-            elif e.status_code >= 500:
-                # 500/503 服务端繁忙或故障，同样重试
-                time.sleep(3)
-                continue
-            else:
-                return f"API业务错误{e.status_code}：{e.message}"
+            if e.status_code in (401, 402, 422):
+                return f"[工具执行失败] (HTTP {e.status_code})：{e.message}"
+            messages.append({"role": "assistant", "content": f"Error: [工具执行失败] (HTTP {e.status_code})：{e.message}。请调整策略重试。"})
+            continue
         except (APIConnectionError, APITimeoutError) as e:
             # 处理网络抖动，连接超时
             wait_time = min(2 ** times + random.uniform(0,1), 30)
@@ -195,7 +194,8 @@ def addMessage(message: str, history:list = None, long_term_history: str = None)
             time.sleep(wait_time)
             continue
         except Exception as e:
-            return f"未知错误：{str(e)}"
+            messages.append({"role": "assistant", "content": f"Error: [工具执行失败] ：{str(e)}。请调整策略，或向用户说明情况"})
+            continue
 
 
 last_history = []
