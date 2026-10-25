@@ -98,6 +98,7 @@ def addMessage(message: str, history:list = None, long_term_history: str = None)
             tool_calls_buffer = {}
             cached_tokens = 0
             total_prompt_tokens = 0
+            total_completion_tokens = 0  
             for chunk in stream:
                 if (chunk.choices and chunk.choices[0].delta.content):
                     text = chunk.choices[0].delta.content
@@ -116,6 +117,7 @@ def addMessage(message: str, history:list = None, long_term_history: str = None)
 
                 if hasattr(chunk, "usage") and chunk.usage:
                     total_prompt_tokens = getattr(chunk.usage, 'prompt_tokens', 0)
+                    total_completion_tokens = getattr(chunk.usage, 'completion_tokens', 0)
                     cached_tokens = getattr(chunk.usage, 'prompt_cache_hit_tokens', 0)
             if tool_calls_buffer:
                 assistant_message = { 
@@ -142,17 +144,30 @@ def addMessage(message: str, history:list = None, long_term_history: str = None)
                     stream=True
                 )
                 final_text = ""
+                tool_prompt_tokens = 0
+                tool_completion_tokens = 0
+                tool_cache_hit_tokens = 0
                 for final in tool_stream:
                     if (final.choices and final.choices[0].delta.content):
                         text = final.choices[0].delta.content
                         print(text, end='', flush=True)
                         final_text += text
+                    if hasattr(final, "usage") and final.usage:
+                        tool_prompt_tokens = getattr(final.usage, 'prompt_tokens', 0)
+                        tool_completion_tokens = getattr(final.usage, 'completion_tokens', 0)
+                        tool_cache_hit_tokens = getattr(final.usage, 'prompt_cache_hit_tokens', 0)
+                print(f"  [Token 统计 - 工具调用场景]")
+                print(f"  第一轮(API请求->决定调工具):")
+                print(f"      Prompt={total_prompt_tokens} | Completion={total_completion_tokens} | CacheHit={cached_tokens}")
+                print(f"  第二轮(工具结果->生成最终回复):")
+                print(f"      Prompt={tool_prompt_tokens} | Completion={tool_completion_tokens} | CacheHit={tool_cache_hit_tokens}")
                 return final_text
+            
             if total_prompt_tokens > 0:
                 hit_rate = (cached_tokens / total_prompt_tokens) * 100
-                print(f"\n[Token 统计] 总 Prompt Tokens: {total_prompt_tokens} | 缓存命中 Tokens: {cached_tokens} | 命中率: {hit_rate:.2f}%")
+                print(f"\n[Token 统计 - 非工具的场景] Prompt={total_prompt_tokens} | Completion={total_completion_tokens} | CacheHit={cached_tokens} | 命中率: {hit_rate:.2f}%")
             else:
-                print("\n[Token 统计] 未获取到 Token 用量信息")
+                print("\n[Token 统计 - 非工具的场景] 未获取到 Token 用量信息")
             return fullText
         except APIStatusError as e:
             if e.status_code == 400:
