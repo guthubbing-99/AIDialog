@@ -5,7 +5,7 @@ import time
 from collections import deque
 import re
 import random
-from agent_with_tool import tools, execute_tool
+from agent_with_tool import tools, execute_tool, validate_tool_args
 import json
 
 client = OpenAI(
@@ -83,6 +83,7 @@ def addMessage(message: str, history:list = None, long_term_history: str = None)
 
     
     retry_times = 3
+    toolNameAndArgumentCount = {} # tool_name和params作为key,value为重试的次数，若超出3次则直接退出防止进入死循环白白浪费token
     for times in range(retry_times):
         try:
             stream = client.chat.completions.create(
@@ -135,17 +136,25 @@ def addMessage(message: str, history:list = None, long_term_history: str = None)
                     }
                 messages.append(assistant_message)
                 for buffer in tool_calls_buffer.values():
+                    toolNameAndArgument = buffer["name"] + buffer["arguments"]
+                    if toolNameAndArgumentCount.get(toolNameAndArgument, 0) >= 3:
+                        return "工具执行多次失败"
                     try:
                         args = json.loads(buffer["arguments"])
                         name = buffer["name"]
                         if isinstance(name, str) and name.strip():
                             # 工具名是字符串且非空
-                            result = execute_tool(name, args)
+                            trans_args = validate_tool_args(name, args)
+                            result = execute_tool(name, trans_args)
+                            if toolNameAndArgument in toolNameAndArgumentCount:
+                                del toolNameAndArgumentCount[toolNameAndArgument]
                             messages.append({"role": "tool", "tool_call_id": buffer["id"], "content": result})
                         else:
+                            toolNameAndArgumentCount[toolNameAndArgument] = toolNameAndArgumentCount.get(toolNameAndArgument, 0) + 1
                             # 希望模型直接跟用户说话
                             messages.append({"role": "assistant", "content": "[工具参数错误] 缺少必填字段，请检查参数格式后重新调用。"})
                     except Exception as e:
+                        toolNameAndArgumentCount[toolNameAndArgument] = toolNameAndArgumentCount.get(toolNameAndArgument, 0) + 1
                         error_msg = str(e)
                         if "JSON" in error_msg or isinstance(e, json.JSONDecodeError):
                             messages.append({"role": "assistant", "content": "Error: JSON 格式解析失败，请严格按照 JSON Schema 重新输出。"})
@@ -196,6 +205,7 @@ def addMessage(message: str, history:list = None, long_term_history: str = None)
         except Exception as e:
             messages.append({"role": "assistant", "content": f"Error: [工具执行失败] ：{str(e)}。请调整策略，或向用户说明情况"})
             continue
+    return "[系统提示] 当前请求处理失败，请稍后再试。"
 
 
 last_history = []

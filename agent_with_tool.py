@@ -1,11 +1,16 @@
 from openai import OpenAI
 import os
 import requests
+from pydantic import BaseModel, Field
+from pydantic import ValidationError
 
 client = OpenAI(
     api_key=os.environ.get('DEEPSEEK_API_KEY'),
     base_url="https://api.deepseek.com"
 )
+
+class WeatherParameters(BaseModel):
+    location: str = Field(..., description="城市名称，比如杭州上海等")
 
 tools = [
     {
@@ -52,6 +57,24 @@ def get_weather(location: str) -> str:
 TOOL_REGISTEY = {
     "get-weather": get_weather
 }
+
+TOOL_SCHEMAS = {
+    "get-weather": WeatherParameters
+}
+
+def validate_tool_args(tool_name: str, params: dict) -> dict:
+    model = TOOL_SCHEMAS.get(tool_name)
+    if model is None:
+        raise ValueError(f"未知工具：{tool_name}")
+    try:
+        # pydantic会自动做类型转换和校验
+        validated = model(**params)
+        return validated.model_dump() # 返回清洗后的标准参数
+    except ValidationError as e:
+        error_details = []
+        for error in e.errors():
+            error_details.append(f"字段 '{error['loc'][0]}': '{error['msg']}' 收到的值：{error.get('input')}")
+        raise ValueError(f"工具：{tool_name}参数校验失败：\n" + "\n".join(error_details))
 
 def execute_tool(name: str, params: object) -> str:
     func = TOOL_REGISTEY.get(name)
