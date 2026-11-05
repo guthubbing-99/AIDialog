@@ -3,43 +3,67 @@ import os
 import requests
 from pydantic import BaseModel, Field
 from pydantic import ValidationError
+import subprocess
 
 client = OpenAI(
     api_key=os.environ.get('DEEPSEEK_API_KEY'),
-    base_url="https://api.deepseek.com"
-)
+    base_url="https://api.deepseek.com")
 
 class WeatherParameters(BaseModel):
     location: str = Field(..., description="城市名称，比如杭州上海等")
 
-tools = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get-weather",
-            "description": """a tool to get weather. if the user's input contains obvious types or
-            phonetic errors(e.g., '杭巷' instead of '杭州'),please automatically corrent the city name 
-            before calling this tools.
-            """,
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "location": {
-                        "type": "string",
-                        "description": "the city of get weather",
-                    },
+class CalendarCancelParameters(BaseModel):
+    event_title: str = Field(..., description="日程名称，比如去杭州等")
+
+weather_tool = {
+    "type": "function",
+    "function": {
+        "name": "get-weather",
+        "description": """a tool to get weather. if the user's input contains obvious types or
+        phonetic errors(e.g., '杭巷' instead of '杭州'),please automatically corrent the city name 
+        before calling this tools.
+        """,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "the city of get weather",
                 },
-                "required": ["location"]
-            }
-        },
-    }
+            },
+            "required": ["location"]
+        }
+    },
+},
+
+cancel_calendar_event_tool = {
+    "type": "function",
+    "function": {
+        "name": "cancel_calendar_event",
+        "description": "a tool to cancel calendar event with eventTitle",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "event_title": {
+                    "type": "string",
+                    "description": "the cancel calendar event title",
+                },
+            },
+            "required": ["event_title"]
+        }
+    },
+}
+
+tools = [
+    weather_tool,
+    cancel_calendar_event_tool
 ]
 
 def get_weather(location: str) -> str:
     get_weather_url = "https://api.openweathermap.org/data/2.5/weather"
     params = {
         "q": location,
-        "appid": "",
+        "appid": "54e90e94c7a25855183495d1fb768f0f",
         "units": "metric",
         "lang": "zh_cn",
     }
@@ -54,12 +78,32 @@ def get_weather(location: str) -> str:
     except Exception as error:
         return f"获取天气异常：{error}"
 
+def cancel_calendar_event(event_title: str) -> str:
+    try:
+        path = "./calendar_control.scpt"
+        result = subprocess.run(
+            ["osascript", path, "cancel_by_title", event_title],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+        else:
+            return f"AppleScript 执行失败: {result.stderr.strip()}"
+    except subprocess.TimeoutExpired:
+        return "取消日程超时"
+    except Exception as e:
+        return f"操作系统异常：{e}"
+
 TOOL_REGISTEY = {
-    "get-weather": get_weather
+    "get-weather": get_weather,
+    "cancel_calendar_event": cancel_calendar_event
 }
 
 TOOL_SCHEMAS = {
-    "get-weather": WeatherParameters
+    "get-weather": WeatherParameters,
+    "cancel_calendar_event": CalendarCancelParameters
 }
 
 def validate_tool_args(tool_name: str, params: dict) -> dict:
