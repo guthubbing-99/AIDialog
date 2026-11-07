@@ -6,6 +6,7 @@ from pydantic import ValidationError
 import subprocess
 import asyncio
 import json
+from concurrent.futures import ThreadPoolExecutor
 
 client = OpenAI(
     api_key=os.environ.get('DEEPSEEK_API_KEY'),
@@ -127,7 +128,11 @@ def execute_tool(name: str, params: object) -> str:
     if func is None:
         return f"未知工具: {name}"
     try:
-        result = func(**params)
+        arguments = json.loads(params)
+    except json.JSONDecodeError:
+        arguments = {}
+    try:
+        result = func(**arguments)
         return result
     except Exception as error:
         return f"工具执行异常: {error}"
@@ -156,3 +161,16 @@ async def execute_all_tools(tool_calls) -> list:
     result = await asyncio.gather(*tasks, return_exceptions=True)
     return result
 
+
+def execute_all_tools_parallel(tool_calls) -> list:
+    results = []
+    with ThreadPoolExecutor() as executor:
+        futures = [executor.submit(execute_tool, tc.function.name, tc.function.arguments) for tc in tool_calls]
+        # 按顺序收集结果
+        for future in futures:
+            try:
+                results.append(future.result())
+            except Exception as e:
+                results.append(f"工具执行异常: {e}")
+                
+    return results

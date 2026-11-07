@@ -1,7 +1,7 @@
-from agent_with_skill import SKILL_REGISTZRY
+from agent_with_skill import SKILL_REGISTRY
 from openai import OpenAI
 import os
-from agent_with_tool import execute_tool, validate_tool_args, execute_all_tools
+from agent_with_tool import execute_tool, validate_tool_args, execute_all_tools,execute_all_tools_parallel
 import json
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -56,7 +56,7 @@ def loop_test(content: str, history:list = None) -> str:
     skill_instructions = []
     skill_tools = []
     for skill_name in skill_names:
-        skill_func = SKILL_REGISTZRY.get(skill_name)
+        skill_func = SKILL_REGISTRY.get(skill_name)
         skill_funcs.append(skill_func)
         skill_instruction = skill_func["instructions"]
         skill_instructions.append(skill_instruction)
@@ -113,10 +113,11 @@ def loop_test(content: str, history:list = None) -> str:
         history.append(clean_assistant_message)
         messages.append(clean_assistant_message)
         # 工具调用
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(asyncio.run, execute_all_tools(tool_calls))
-            print(f"future{future}")
-            results = future.result()
+        # with ThreadPoolExecutor(max_workers=1) as executor:
+        #     future = executor.submit(asyncio.run, execute_all_tools(tool_calls))
+        #     print(f"future{future}")
+        #     results = future.result()
+        results = execute_all_tools_parallel(tool_calls)
         for i, result in enumerate(results):
             sub_tool = {
                 "role": "tool",

@@ -22,7 +22,7 @@ cancel_calendar_skill = {
     4. 根据工具的返回结果，告知用户操作是否成功。"""
 }
 
-SKILL_REGISTZRY = {
+SKILL_REGISTRY = {
     "weather": wheather_skill,
     "calendar": cancel_calendar_skill
 }
