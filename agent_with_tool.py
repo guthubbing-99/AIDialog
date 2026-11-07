@@ -4,6 +4,8 @@ import requests
 from pydantic import BaseModel, Field
 from pydantic import ValidationError
 import subprocess
+import asyncio
+import json
 
 client = OpenAI(
     api_key=os.environ.get('DEEPSEEK_API_KEY'),
@@ -129,3 +131,28 @@ def execute_tool(name: str, params: object) -> str:
         return result
     except Exception as error:
         return f"工具执行异常: {error}"
+
+async def execute_tool_async(name: str, params: object) -> str:
+    func = TOOL_REGISTEY.get(name)
+    if func is None:
+        return f"未知工具：{name}"
+    try:
+        arguments = json.loads(params)
+    except json.JSONDecodeError:
+        arguments = {}
+        
+    try:
+        result = await asyncio.to_thread(func, **arguments)
+        return result
+    except Exception as error:
+        return f"工具执行异常: {error}"
+# 并行处理skill
+async def execute_all_tools(tool_calls) -> list:
+    tasks = [
+        # asyncio.to_thread(execute_tool, tc.function.name, tc.function.arguments)
+        execute_tool_async(tc.function.name, tc.function.arguments)
+        for tc in tool_calls
+    ]
+    result = await asyncio.gather(*tasks, return_exceptions=True)
+    return result
+

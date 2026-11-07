@@ -1,8 +1,10 @@
 from agent_with_skill import SKILL_REGISTZRY
 from openai import OpenAI
 import os
-from agent_with_tool import tools, execute_tool, validate_tool_args
+from agent_with_tool import execute_tool, validate_tool_args, execute_all_tools
 import json
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 client = OpenAI(
     api_key=os.environ.get('DEEPSEEK_API_KEY'),
@@ -111,19 +113,31 @@ def loop_test(content: str, history:list = None) -> str:
         history.append(clean_assistant_message)
         messages.append(clean_assistant_message)
         # 工具调用
-        for tool_calls_item in tool_calls:
-            tool_name = tool_calls_item.function.name
-            tool_par = json.loads(tool_calls_item.function.arguments)
-            transfer_tool_par = validate_tool_args(tool_name, tool_par)
-            print(f"transfer_tool_par{transfer_tool_par}")
-            result = execute_tool(tool_name, transfer_tool_par)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(asyncio.run, execute_all_tools(tool_calls))
+            print(f"future{future}")
+            results = future.result()
+        for i, result in enumerate(results):
             sub_tool = {
                 "role": "tool",
-                "tool_call_id": tool_calls_item.id,
+                "tool_call_id": tool_calls[i].id,
                 "content": result
             }
             messages.append(sub_tool)
             history.append(sub_tool)
+        # for tool_calls_item in tool_calls:
+        #     tool_name = tool_calls_item.function.name
+        #     tool_par = json.loads(tool_calls_item.function.arguments)
+        #     transfer_tool_par = validate_tool_args(tool_name, tool_par)
+        #     print(f"transfer_tool_par{transfer_tool_par}")
+        #     result = execute_tool(tool_name, transfer_tool_par)
+        #     sub_tool = {
+        #         "role": "tool",
+        #         "tool_call_id": tool_calls_item.id,
+        #         "content": result
+        #     }
+        #     messages.append(sub_tool)
+        #     history.append(sub_tool)
         tool_stream = client.chat.completions.create(
             model="deepseek-flash",
             messages=messages,
