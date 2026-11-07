@@ -34,7 +34,7 @@ weather_tool = {
             "required": ["location"]
         }
     },
-},
+}
 
 cancel_calendar_event_tool = {
     "type": "function",
@@ -125,7 +125,7 @@ def execute_tool(name: str, params: object) -> str:
     if func is None:
         return f"未知工具: {name}"
     try:
-        result = func(params)
+        result = func(**params)
         return result
     except Exception as error:
         return f"工具执行异常: {error}"

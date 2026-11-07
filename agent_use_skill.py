@@ -9,11 +9,11 @@ client = OpenAI(
     base_url="https://api.deepseek.com"
 )
 
-def find_skill(content: str) -> str:
+def find_skills(content: str) -> list:
     prompt = f"""
     你是一个专业的skill调用工具，目前提供的skill如下:weather(天气获取),calendar(日历取消)
     用户输入：{content}
-    请返回具体的skill名称
+    请返回具体的skill名称组成的JSON字符串数组
     """
     messages = []
     messages.append({"role":"user", "content": prompt})
@@ -32,19 +32,38 @@ def find_skill(content: str) -> str:
     print(f"      Prompt={tool_prompt_tokens} | Completion={tool_completion_tokens} | CacheHit={tool_cache_hit_tokens}")
     
     print(f"获取到的skill名称如下：{response.choices[0].message.content}")
-    return response.choices[0].message.content.strip()
+    raw_response = response.choices[0].message.content.strip()
+    if raw_response.startswith("```"):
+        raw_response = raw_response.split("\n", 1)
+        raw_response = raw_response.rsplit("```", 1)[0]
+    try:
+        skill_list = json.loads(raw_response)
+        if isinstance(skill_list, list):
+            return skill_list
+        else:
+            print("大模型返回的不是数组格式，返回空列表")
+            return []
+    except json.JSONDecodeError as e:
+        print(f"JSON解析失败: {e}，返回空列表")
+        return []
 
 def loop_test(content: str, history:list = None) -> str:
-    skill_name = find_skill(content)
-    skill_func = SKILL_REGISTZRY.get(skill_name)
+    skill_names = find_skills(content)
+
+    skill_funcs = []
+    skill_instructions = []
+    skill_tools = []
+    for skill_name in skill_names:
+        skill_func = SKILL_REGISTZRY.get(skill_name)
+        skill_funcs.append(skill_func)
+        skill_instruction = skill_func["instructions"]
+        skill_instructions.append(skill_instruction)
+        required_tools = skill_func.get("required_tools", [])
+        print(f"required_tools{required_tools}")
+        if required_tools:
+            skill_tools.extend(required_tools)
     messages = []
-    if skill_func:
-        skill_instructions = skill_func["instructions"]
-        skill_tool = skill_func["required_tools"]
-    else:
-        skill_instructions = "you are a helpful assistant"
-        skill_tool = []
-    messages.append({"role": "system", "content": skill_instructions})
+    messages.append({"role": "system", "content": "\n\n".join(skill_instructions)})
     if history:
        for subHistroy in history:
            if isinstance(subHistroy, dict) and "role" in subHistroy and "content" in subHistroy:
@@ -57,10 +76,12 @@ def loop_test(content: str, history:list = None) -> str:
         "messages": messages,
         "stream": False
     }
-    if skill_tool:
-        request_params["tools"] = skill_tool
+    if skill_tools:
+        print(f"👉 传给大模型的工具结构: {skill_tools}")
+        request_params["tools"] = skill_tools
         request_params["tool_choice"] = "auto"
     response = client.chat.completions.create(**request_params)
+
     assistant_message = response.choices[0].message
     usage = response.usage
     tool_prompt_tokens = getattr(usage, 'prompt_tokens', 0)
@@ -70,7 +91,7 @@ def loop_test(content: str, history:list = None) -> str:
     print(f"  第二轮(API请求->决定调工具):")
     print(f"      Prompt={tool_prompt_tokens} | Completion={tool_completion_tokens} | CacheHit={tool_cache_hit_tokens}")
     tool_calls = assistant_message.tool_calls
-    print(f"tool_callls{tool_calls}")
+    print(f"tool_calls{tool_calls}")
     if tool_calls:
         clean_assistant_message = {
             "role": "assistant",
@@ -94,6 +115,7 @@ def loop_test(content: str, history:list = None) -> str:
             tool_name = tool_calls_item.function.name
             tool_par = json.loads(tool_calls_item.function.arguments)
             transfer_tool_par = validate_tool_args(tool_name, tool_par)
+            print(f"transfer_tool_par{transfer_tool_par}")
             result = execute_tool(tool_name, transfer_tool_par)
             sub_tool = {
                 "role": "tool",
