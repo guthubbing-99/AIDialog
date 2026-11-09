@@ -123,14 +123,25 @@ def validate_tool_args(tool_name: str, params: dict) -> dict:
             error_details.append(f"字段 '{error['loc'][0]}': '{error['msg']}' 收到的值：{error.get('input')}")
         raise ValueError(f"工具：{tool_name}参数校验失败：\n" + "\n".join(error_details))
 
+def transfer_params(params: object) -> dict:
+    if isinstance(params, dict):
+        # 如果已经是字典了，直接返回
+        arguments = params
+    elif isinstance(params, str):
+        # 如果是字符串，才去解析 JSON
+        try:
+            arguments = json.loads(params)
+        except json.JSONDecodeError:
+            arguments = {}
+    else:
+        arguments = {}
+    return arguments
+
 def execute_tool(name: str, params: object) -> str:
     func = TOOL_REGISTEY.get(name)
     if func is None:
         return f"未知工具: {name}"
-    try:
-        arguments = json.loads(params)
-    except json.JSONDecodeError:
-        arguments = {}
+    arguments = transfer_params(params)
     try:
         result = func(**arguments)
         return result
@@ -141,10 +152,7 @@ async def execute_tool_async(name: str, params: object) -> str:
     func = TOOL_REGISTEY.get(name)
     if func is None:
         return f"未知工具：{name}"
-    try:
-        arguments = json.loads(params)
-    except json.JSONDecodeError:
-        arguments = {}
+    arguments = transfer_params(params)
         
     try:
         result = await asyncio.to_thread(func, **arguments)
