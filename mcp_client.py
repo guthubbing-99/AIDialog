@@ -109,10 +109,10 @@ class SimpleMCPClient:
                     "arguments": step_arguments
                 })
                 print(f"step:{step},工具结果：{tools_call}")
-                if tools_call["result"]:
+                if "result" in tools_call:
                     text = tools_call["result"]["content"][0]["text"]
                 else:
-                    text = tools_call["error"]["message"]
+                    text = tools_call["error"].get('message')
                 step_results[step_id] = text
         messages = []
         summary_prompt = f"以下是任务执行的结果：{json.dumps(step_results, ensure_ascii=False)}\n请根据结果，用自然语言向用户给出最终回复。"
