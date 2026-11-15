@@ -31,6 +31,11 @@ class SimpleMCPClient:
         response_result = self.progress.stdout.readline()
         return json.loads(response_result)
 
+    def send_notifications(self, method, params=None):
+        request = {"jsonrpc": "2.0", "method": method, "params": params or {}}
+        self.progress.stdin.write(json.dumps(request) + "\n")
+        self.progress.stdin.flush()
+
     def transfer_to_json(self, content, tools_schema: list) -> list:
         prompt = f"""
         你是一个强大的AI agent。当用户提出包含多个步骤或存在条件依赖的任务时，你必须先输出一个JSON格式的依赖任务。
@@ -82,6 +87,8 @@ class SimpleMCPClient:
         initialize = self.send_request("initialize")
         print(f"初始化结果：{initialize}")
 
+        self.send_notifications("notifications/initialized")
+
         tools_list = self.send_request("tools/list")
         print(f"工具列表：{tools_list}")
 
@@ -129,7 +136,7 @@ class SimpleMCPClient:
 
 
 if __name__ == "__main__":
-    cli = SimpleMCPClient([sys.executable, "mcp_server.py"])
+    cli = SimpleMCPClient([sys.executable, "fast_mcp_server.py"])
     try:
         while True:
             user_input = input("\n你")
